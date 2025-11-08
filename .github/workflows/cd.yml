@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 env:
+  # SHA do commit do CI que disparou este CD
   CI_SHA: ${{ github.event.workflow_run.head_sha }}
 
 jobs:
@@ -29,78 +30,55 @@ jobs:
           echo "IMAGE=$IMAGE"     >> "$GITHUB_OUTPUT"
           echo "TAG_SHA=$TAG_SHA" >> "$GITHUB_OUTPUT"
           echo "NAMESPACE=$NS"    >> "$GITHUB_OUTPUT"
+          echo "Usando imagem: $IMAGE:$TAG_SHA"
 
-      - name: Decide if we have kubeconfig
-        id: gate
+      - name: Validate kubeconfig & decide deploy
+        id: kcfg
         shell: bash
         run: |
-          if [ -n "${{ secrets.KUBE_CONFIG_DATA }}" ]; then
-            echo "DO_DEPLOY=true"  >> "$GITHUB_OUTPUT"
-          else
+          REASON=""
+          if [ -z "${{ secrets.KUBE_CONFIG_DATA }}" ]; then
             echo "DO_DEPLOY=false" >> "$GITHUB_OUTPUT"
+            echo "REASON=KUBE_CONFIG_DATA não definido." >> "$GITHUB_OUTPUT"
+          else
+            echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > kcfg || true
+            if [ ! -s kcfg ]; then
+              echo "DO_DEPLOY=false" >> "$GITHUB_OUTPUT"
+              echo "REASON=KUBE_CONFIG_DATA inválido (base64?)." >> "$GITHUB_OUTPUT"
+            else
+              if grep -qiE 'C:\\\\|\\.minikube\\\\|(^|[[:space:]])client-certificate:|(^|[[:space:]])client-key:|(^|[[:space:]])certificate-authority:' kcfg; then
+                echo "DO_DEPLOY=false" >> "$GITHUB_OUTPUT"
+                echo "REASON=kubeconfig aponta para paths locais (Windows/Minikube) ou usa certs por arquivo." >> "$GITHUB_OUTPUT"
+              else
+                echo "DO_DEPLOY=true" >> "$GITHUB_OUTPUT"
+                mkdir -p "$HOME/.kube"
+                mv kcfg "$HOME/.kube/config"
+                chmod 600 "$HOME/.kube/config"
+              fi
+            fi
           fi
 
-      - name: Skip deploy (no kubeconfig present)
-        if: steps.gate.outputs.DO_DEPLOY != 'true'
+      - name: Skip deploy (no/invalid kubeconfig)
+        if: steps.kcfg.outputs.DO_DEPLOY != 'true'
+        shell: bash
         run: |
-          echo "KUBE_CONFIG_DATA não definido. Pulando kubectl."
-          echo "A imagem publicada foi: ${{ steps.vars.outputs.IMAGE }}:${{ steps.vars.outputs.TAG_SHA }}"
-          echo "Se você usa estratégia pull-based (ex.: Keel no cluster), o update ocorrerá automaticamente."
-          exit 0
+          echo "Pulando deploy via kubectl."
+          echo "Motivo: ${{
+            steps.kcfg.outputs.REASON || 'Sem motivo detalhado'
+          }}"
+          echo "Imagem publicada: ${{ steps.vars.outputs.IMAGE }}:${{ steps.vars.outputs.TAG_SHA }}"
+          # Job termina com sucesso para não quebrar seu pipeline
 
+      # Daqui para baixo só roda se DO_DEPLOY == true
       - name: Setup kubectl
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
+        if: steps.kcfg.outputs.DO_DEPLOY == 'true'
         uses: azure/setup-kubectl@v4
         with:
           version: 'latest'
 
-      - name: Configure kubeconfig
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
-        shell: bash
-        run: |
-          mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
-
+      # PowerShell, como você pediu
       - name: Create namespace if not exists (pwsh)
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
+        if: steps.kcfg.outputs.DO_DEPLOY == 'true'
         shell: pwsh
         env:
-          K8S_NAMESPACE: ${{ steps.vars.outputs.NAMESPACE }}
-        run: |
-          kubectl get ns $env:K8S_NAMESPACE
-          if ($LASTEXITCODE -ne 0) {
-            kubectl create ns $env:K8S_NAMESPACE
-          }
-
-      - name: Apply base manifests (optional)
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
-        shell: bash
-        run: |
-          NS="${{ steps.vars.outputs.NAMESPACE }}"
-          for f in k8s/service.yaml k8s/prometheus-deployment.yaml k8s/grafana-deployment.yaml k8s/nginx-deployment.yaml k8s/nginx-service.yaml k8s/prometheus-config.yaml; do
-            [ -f "$f" ] && kubectl apply -n "$NS" -f "$f" || true
-          done
-
-      - name: Apply app deployment (first time)
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
-        run: |
-          kubectl apply -n "${{ steps.vars.outputs.NAMESPACE }}" -f k8s/deployment.yaml
-
-      - name: Set image to new tag
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
-        run: |
-          kubectl set image -n "${{ steps.vars.outputs.NAMESPACE }}" \
-            deployment/monitor \
-            monitor="${{ steps.vars.outputs.IMAGE }}:${{ steps.vars.outputs.TAG_SHA }}"
-
-      - name: Wait rollout
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
-        run: |
-          kubectl rollout status deployment/monitor -n "${{ steps.vars.outputs.NAMESPACE }}" --timeout=180s
-
-      - name: Show services (debug)
-        if: steps.gate.outputs.DO_DEPLOY == 'true'
-        run: |
-          kubectl get ns
-          kubectl get all -n "${{ steps.vars.outputs.NAMESPACE }}"
+          K8S_NAMESPACE: ${{ steps.vars.outputs_

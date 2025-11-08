@@ -19,7 +19,7 @@ jobs:
         id: vars
         shell: bash
         run: |
-          # Altere abaixo para seu repositório no Docker Hub (minúsculas)
+          # Defina DOCKERHUB_IMAGE em Secrets se quiser sobrepor (ex.: minhaorg/monitor)
           IMAGE="${{ secrets.DOCKERHUB_IMAGE || 'adrianbranche/monitor' }}"
           echo "IMAGE=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "TAG_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
