@@ -9,30 +9,5 @@ minikube service prometheus
 minikube service grafana
 minikube service node-monitor-service
 
-kubectl delete configmap prometheus-config
-kubectl apply -f .\k8s\prometheus-config.yaml
-kubectl rollout restart deployment prometheus
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 docker build -t nginx-proxy ./nginx
-kubectl apply -f .\k8s\nginx-deployment.yaml
-kubectl apply -f .\k8s\nginx-service.yaml
 kubectl get pods -A
