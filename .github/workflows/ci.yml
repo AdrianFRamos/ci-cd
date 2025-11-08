@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           # Altere abaixo para seu repositório no Docker Hub (minúsculas)
-          IMAGE="${{ secrets.DOCKERHUB_IMAGE || 'adrianbranche/monitor:latest' }}"
+          IMAGE="${{ secrets.DOCKERHUB_IMAGE || 'adrianbranche/monitor' }}"
           echo "IMAGE=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "TAG_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 

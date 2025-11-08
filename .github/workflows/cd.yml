@@ -23,7 +23,7 @@ jobs:
         id: vars
         shell: bash
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_IMAGE || 'adrianbranche/monitor:latest' }}"
+          IMAGE="${{ secrets.DOCKERHUB_IMAGE || 'adrianbranche/monitor' }}"
           TAG_SHA="${CI_SHA::7}"
           NS="${{ secrets.K8S_NAMESPACE || 'default' }}"
           echo "IMAGE=$IMAGE"     >> "$GITHUB_OUTPUT"
